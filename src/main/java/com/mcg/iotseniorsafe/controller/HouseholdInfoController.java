@@ -4,13 +4,15 @@ import com.mcg.iotseniorsafe.entity.HouseholdInfo;
 import com.mcg.iotseniorsafe.repository.HouseholdInfoRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-
-import java.util.ArrayList;
-import java.util.List;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Slf4j
 @Controller
@@ -40,18 +42,32 @@ public class HouseholdInfoController {
 
 
     // 데이터 목록 조회
-    @GetMapping("/status/list")
-    public String index(Model model)
+    // 페이지 번호 주면 데이터 10개 제공
+    public Page<HouseholdInfo> getList(int page)
     {
-        // 1. 모든 데이터 DB에서 가져오기
-        ArrayList<HouseholdInfo> householdInfoEntityList = householdInfoRepository.findAll();
-        // 2. 모델에 데이터 등록
-        model.addAttribute("householdinfoList", householdInfoEntityList);
-        // 3. 뷰 페이지 설정
-        return "household/list"; // 페이징 미적용
+        Pageable pageable = PageRequest.of(page, 10); // 10개 행
+        return this.householdInfoRepository.findAll(pageable);
     }
 
-    // 시간별 기기 사용량 조회
+    @GetMapping("/status/list")
+    public String index(Model model,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size) {
+        // 1. 페이지 번호(page)와 페이지 크기(size)를 동적으로 지정
+        Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
+
+        // 2. 페이징된 데이터 조회
+        Page<HouseholdInfo> householdInfoPage = householdInfoRepository.findAll(pageable);
+
+        // 3. 모델에 데이터 등록 (페이징 정보 포함)
+        model.addAttribute("householdinfoPage", householdInfoPage);
+
+        // 4. 뷰 페이지 설정 (예: household/list.html)
+        return "household/list";
+    }
+
+
+
 
 
 }
