@@ -1,0 +1,26 @@
+<div th:fragment="content">
+    <h2>Dashboard</h2>
+    <table class="table table-striped table-hover">
+        <thead>
+        <tr>
+            <th scope="col">LED_SENSOR_LOG_SERNO</th>
+            <th scope="col">LED_MTCHN_SN</th>
+            <th scope="col">LED_SENSOR_GBN</th>
+            <th scope="col">REG_DT 시간</th>
+        </tr>
+        </thead>
+        <tbody>
+
+        <tr th:each="householdinfo : ${householdinfoList}">
+            <th scope="row" th:text="${householdinfo.id}"></th>
+            <td th:text="${householdinfo.ledMtchnSn ?: '데이터 없음'}"></td>
+            <td th:text="${householdinfo.ledSensorGbn ?: '데이터 없음'}"></td>
+            <td th:text="${#temporals.format(householdinfo.regDt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+        </tr>
+
+        <tr th:if="${#lists.isEmpty(householdinfoList)}">
+            <td colspan="4">데이터가 존재하지 않습니다.</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
