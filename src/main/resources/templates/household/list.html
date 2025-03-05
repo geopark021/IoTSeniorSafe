@@ -17,3 +17,16 @@
     </tr>
     </tbody>
 </table>
+
+<!-- 페이지네이션 -->
+<div>
+    <a th:href="@{/status/list(page=0, size=${householdinfoPage.size})}">처음</a>
+    <a th:if="${householdinfoPage.number > 0}"
+       th:href="@{/status/list(page=${householdinfoPage.number - 1}, size=${householdinfoPage.size})}">이전</a>
+
+    <span th:text="${householdinfoPage.number + 1}"></span> / <span th:text="${householdinfoPage.totalPages}"></span>
+
+    <a th:if="${householdinfoPage.number + 1 < householdinfoPage.totalPages}"
+       th:href="@{/status/list(page=${householdinfoPage.number + 1}, size=${householdinfoPage.size})}">다음</a>
+    <a th:href="@{/status/list(page=${householdinfoPage.totalPages - 1}, size=${householdinfoPage.size})}">마지막</a>
+</div>

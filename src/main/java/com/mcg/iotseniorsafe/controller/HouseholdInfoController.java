@@ -51,18 +51,20 @@ public class HouseholdInfoController {
 
     @GetMapping("/status/list")
     public String index(Model model,
-                        @RequestParam(defaultValue = "0") int page,
-                        @RequestParam(defaultValue = "10") int size) {
+                        @RequestParam(defaultValue = "0") int page, // 현재 페이지
+                        @RequestParam(defaultValue = "20") int size) {
         // 1. 페이지 번호(page)와 페이지 크기(size)를 동적으로 지정
-        Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
+        Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending()); // id기준 최신순으로
 
         // 2. 페이징된 데이터 조회
-        Page<HouseholdInfo> householdInfoPage = householdInfoRepository.findAll(pageable);
+        Page<HouseholdInfo> householdInfoPage = householdInfoRepository.findAll(pageable); // ArrayList 타입으로 받음
 
         // 3. 모델에 데이터 등록 (페이징 정보 포함)
         model.addAttribute("householdinfoPage", householdInfoPage);
+        model.addAttribute("currentPage", page);
+        model.addAttribute("totalPages", householdInfoPage.getTotalPages());
 
-        // 4. 뷰 페이지 설정 (예: household/list.html)
+        // 4. 뷰 페이지 설정
         return "household/list";
     }
 
