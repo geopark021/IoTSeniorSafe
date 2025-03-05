@@ -6,7 +6,7 @@
     <title>Household Info</title>
 </head>
 <body >
-<!-- base.html의 content 영역에 이 부분이 삽입됩니다 -->
+<!-- base.html의 content 영역에 이 부분이 삽입 -->
 <div layout:fragment="content">
     <h2>Dashboard</h2>
     <table class="table table-striped table-hover">
@@ -16,6 +16,7 @@
             <th scope="col">LED_MTCHN_SN</th>
             <th scope="col">LED_SENSOR_GBN</th>
             <th scope="col">REG_DT 시간</th>
+            <th scope="col">LED ON 지속 시간</th>
         </tr>
         </thead>
         <tbody>
@@ -24,6 +25,11 @@
             <td th:text="${householdinfo.ledMtchnSn ?: '데이터 없음'}"></td>
             <td th:text="${householdinfo.ledSensorGbn ?: '데이터 없음'}"></td>
             <td th:text="${#temporals.format(householdinfo.regDt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+
+            <td th:if="${householdinfo.regDt != null}"
+                th:text="|${ledOnTime.hours} 시간 ${ledOnTime.minutes} 분|">
+            </td>
+
         </tr>
 
         <tr th:if="${householdinfo == null or householdinfo.id == null}">

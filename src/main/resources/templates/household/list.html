@@ -1,32 +1,54 @@
-<!-- household/list.html 예시 -->
-<table class="table">
-    <thead>
-    <tr>
-        <th>ID</th>
-        <th>LED_MTCHN_SN</th>
-        <th>LED_SENSOR_GBN</th>
-        <th>REG_DT</th>
-    </tr>
-    </thead>
-    <tbody>
-    <tr th:each="item : ${householdinfoPage.content}">
-        <td th:text="${item.id}"></td>
-        <td th:text="${item.ledMtchnSn}"></td>
-        <td th:text="${item.ledSensorGbn}"></td>
-        <td th:text="${#temporals.format(item.regDt, 'yyyy-MM-dd HH:mm:ss')}"></td>
-    </tr>
-    </tbody>
-</table>
+<head>
+    <link rel="stylesheet" th:href="@{/css/pagination.css}">
+</head>
+
+<div class="table-container">
+    <table class="table table-hover">
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>LED_MTCHN_SN</th>
+            <th>LED_SENSOR_GBN</th>
+            <th>REG_DT</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="item : ${householdinfoPage.content}">
+            <td th:text="${item.id}"></td>
+            <td th:text="${item.ledMtchnSn}"></td>
+            <td th:text="${item.ledSensorGbn}"></td>
+            <td th:text="${#temporals.format(item.regDt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+        </tr>
+        </tbody>
+    </table>
+</div>
 
 <!-- 페이지네이션 -->
-<div>
-    <a th:href="@{/status/list(page=0, size=${householdinfoPage.size})}">처음</a>
-    <a th:if="${householdinfoPage.number > 0}"
-       th:href="@{/status/list(page=${householdinfoPage.number - 1}, size=${householdinfoPage.size})}">이전</a>
+<div class="pagination">
+    <!-- 이전 페이지 그룹 (10페이지 단위) -->
+    <a th:if="${currentPage >= 10}"
+       th:href="@{/status/list(page=${pageGroupStart - 10}, size=${householdinfoPage.size})}"
+       class="page-link">«</a>
 
-    <span th:text="${householdinfoPage.number + 1}"></span> / <span th:text="${householdinfoPage.totalPages}"></span>
+    <!-- 이전 페이지 -->
+    <a th:if="${currentPage > 0}"
+       th:href="@{/status/list(page=${currentPage - 1}, size=${householdinfoPage.size})}"
+       class="page-link">〈</a>
 
-    <a th:if="${householdinfoPage.number + 1 < householdinfoPage.totalPages}"
-       th:href="@{/status/list(page=${householdinfoPage.number + 1}, size=${householdinfoPage.size})}">다음</a>
-    <a th:href="@{/status/list(page=${householdinfoPage.totalPages - 1}, size=${householdinfoPage.size})}">마지막</a>
+    <!-- 페이지 번호 (10개 단위 유지) -->
+    <span th:each="i : ${#numbers.sequence(pageGroupStart, pageGroupEnd)}">
+        <a th:href="@{/status/list(page=${i}, size=${householdinfoPage.size})}"
+           th:text="${i + 1}"
+           th:class="${(i == currentPage) ? 'active-page' : ''}"></a>
+    </span>
+
+    <!-- 다음 페이지 -->
+    <a th:if="${currentPage + 1 < householdinfoPage.totalPages}"
+       th:href="@{/status/list(page=${currentPage + 1}, size=${householdinfoPage.size})}"
+       class="page-link">〉</a>
+
+    <!-- 다음 페이지 그룹 (10페이지 단위) -->
+    <a th:if="${currentPage + 10 < householdinfoPage.totalPages}"
+       th:href="@{/status/list(page=${pageGroupStart + 10}, size=${householdinfoPage.size})}"
+       class="page-link">»</a>
 </div>

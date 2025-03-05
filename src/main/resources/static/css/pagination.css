@@ -1,0 +1,40 @@
+.table-container {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    overflow-x: auto;
+}
+
+.table {
+    width: auto;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.table th, .table td {
+    text-align: center;
+    vertical-align: middle;
+}
+.pagination {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.pagination a {
+    color: blue;
+    text-decoration: none;
+    padding: 5px 10px;
+    margin: 0 3px;
+    border: 1px solid blue;
+    border-radius: 3px;
+}
+
+.pagination a.active-page {
+    background-color: blue;
+    color: white;
+}
+
+.pagination a:hover {
+    background-color: lightblue;
+}
