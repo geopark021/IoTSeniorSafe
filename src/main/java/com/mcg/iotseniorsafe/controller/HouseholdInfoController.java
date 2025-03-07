@@ -1,5 +1,6 @@
 package com.mcg.iotseniorsafe.controller;
 
+import com.mcg.iotseniorsafe.dto.DevicesStats;
 import com.mcg.iotseniorsafe.entity.HouseholdInfo;
 import com.mcg.iotseniorsafe.repository.HouseholdInfoRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -24,36 +27,58 @@ public class HouseholdInfoController {
 
     @Autowired
     private HouseholdInfoRepository householdInfoRepository;
+
+    // 데이터 현황
+    // IoT 장치 현황 - 현재 기기 개수(가구 수) 데이터만 있음
     @GetMapping("/status")
-    public String showHouseholdStatus()
+    public String showDashboard(Model model)
     {
-        return "layouts/sidebar";
+        // 1. DB에서 기기 개수 불러오기
+        Long iotEnabledHouseholds = householdInfoRepository.getDevicesCount();
+
+        // DevicesStats DTO 생성 (나머지 값은 임의로 설정)
+        DevicesStats deviceStats = new DevicesStats(
+                300,                      // totalHouseholds (임의 값)
+                iotEnabledHouseholds,     // iotEnabledHouseholds (DB에서 가져온 값)
+                285,                      // powerConnectedHouseholds (임의 값)
+                12                        // anomaliesPerHousehold (임의 값)
+        );
+        // 2. 모델에 데이터 등록
+        model.addAttribute("deviceStats", deviceStats);
+
+
+        // 3. 뷰에 설정
+        return "household/iotdashboard";
     }
 
     // DB에 저장된 데이터 조회
-    // 한 가구의 단일 데이터 조회
-    @GetMapping("/status/{id}")
-    public String show(@PathVariable Long id, Model model)
+    // 한 가구의 단일 데이터 조회 (한 가구의 여러 데이터 조회 변경)
+    @GetMapping("/status/{ledMtchnSn}")
+    public String show(@PathVariable String ledMtchnSn, Model model)
     {
-        log.info("id = " + id);
+        log.info("ledMtchnSn = " + ledMtchnSn);
         // 1. id를 조회해 DB에서 해당 데이터 가져오기
-        HouseholdInfo householdInfoEntity = householdInfoRepository.findById(id).orElse(null);
+        List<HouseholdInfo> householdInfoList = householdInfoRepository.findByLedMtchnSn(ledMtchnSn);
 
         // 조회시 시각
         LocalDateTime now = LocalDateTime.now();
 
         // LED ON 유지시간 계산 - 현재 시간만 넘겨주면 뷰로 전달하면 됨
-        long hours = 0;
-        long minutes = 0;
-        if (householdInfoEntity != null && householdInfoEntity.getRegDt() != null) {
-            Duration duration = Duration.between(householdInfoEntity.getRegDt(), now);
-            hours = duration.toHours();
-            minutes = duration.toMinutes() % 60;
+        List<Map<String, Object>> ledOnTimes = new ArrayList<>();
+        for (HouseholdInfo info : householdInfoList) {
+            long hours = 0;
+            long minutes = 0;
+            if (info.getRegDt() != null) {
+                Duration duration = Duration.between(info.getRegDt(), now);
+                hours = duration.toHours();
+                minutes = duration.toMinutes() % 60;
+            }
+            ledOnTimes.add(Map.of("ledMtchnSn", info.getLedMtchnSn(), "hours", hours, "minutes", minutes));
         }
 
         // 2. 모델에 데이터 등록
-        model.addAttribute("householdinfo", householdInfoEntity);
-        model.addAttribute("ledOnTime", Map.of("hours", hours, "minutes", minutes));
+        model.addAttribute("householdInfoList", householdInfoList);
+        model.addAttribute("ledOnTimes", ledOnTimes);
 
         // 3. 뷰 페이지 반환
         return "household/show";

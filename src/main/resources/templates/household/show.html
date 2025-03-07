@@ -20,16 +20,16 @@
         </tr>
         </thead>
         <tbody>
-        <tr th:if="${householdinfo != null and householdinfo.id != null}">
-            <th scope="row" th:text="${householdinfo.id}"></th>
-            <td th:text="${householdinfo.ledMtchnSn ?: '데이터 없음'}"></td>
-            <td th:text="${householdinfo.ledSensorGbn ?: '데이터 없음'}"></td>
-            <td th:text="${#temporals.format(householdinfo.regDt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+        <tr th:each="info, iterStat : ${householdInfoList}">
+            <td th:text="${info.id}"></td>
+            <td th:text="${info.ledMtchnSn}"></td>
+            <td th:text="${info.ledSensorGbn}"></td>
+            <td th:text="${#temporals.format(info.regDt, 'yyyy-MM-dd HH:mm:ss')}" th:if="${info.regDt != null}"></td>
+            <td th:if="${info.regDt == null}">데이터 없음</td>
 
-            <td th:if="${householdinfo.regDt != null}"
-                th:text="|${ledOnTime.hours} 시간 ${ledOnTime.minutes} 분|">
-            </td>
-
+            <!-- 유지시간 매칭 -->
+            <td th:each="led : ${ledOnTimes}" th:if="${led.ledMtchnSn == info.ledMtchnSn}"
+                th:text="|${led.hours} 시간 ${led.minutes} 분|"></td>
         </tr>
 
         <tr th:if="${householdinfo == null or householdinfo.id == null}">
