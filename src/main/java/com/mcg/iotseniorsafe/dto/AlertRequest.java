@@ -3,26 +3,18 @@ package com.mcg.iotseniorsafe.dto;
 import java.util.List;
 
 public class AlertRequest {
-    // 센서별 측정값 리스트
-    private List<Double> sensorValues;
-    // 센서별 임계치 리스트
-    private List<Double> thresholds;
+    private List<SensorDataDto> sensorData;
+    private String userId;
+    private String location; // 방 위치
 
-    // 기본 생성자 (Jackson용)
     public AlertRequest() {}
 
-    // getter / setter
-    public List<Double> getSensorValues() {
-        return sensorValues;
-    }
-    public void setSensorValues(List<Double> sensorValues) {
-        this.sensorValues = sensorValues;
-    }
+    public List<SensorDataDto> getSensorData() { return sensorData; }
+    public void setSensorData(List<SensorDataDto> sensorData) { this.sensorData = sensorData; }
 
-    public List<Double> getThresholds() {
-        return thresholds;
-    }
-    public void setThresholds(List<Double> thresholds) {
-        this.thresholds = thresholds;
-    }
+    public String getUserId() { return userId; }
+    public void setUserId(String userId) { this.userId = userId; }
+
+    public String getLocation() { return location; }
+    public void setLocation(String location) { this.location = location; }
 }
