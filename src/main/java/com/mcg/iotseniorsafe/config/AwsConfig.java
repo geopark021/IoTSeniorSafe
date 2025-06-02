@@ -7,6 +7,7 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 
+// AWS Bedrock 설정 파일
 // 애플리케이션 전역에서 관리되는 빈 객체 (Root Context)
 @Configuration
 public class AwsConfig {
