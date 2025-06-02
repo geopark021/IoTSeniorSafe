@@ -1,5 +1,5 @@
 package com.mcg.iotseniorsafe.dto;
-
+// AI 리포팅 - 요청, 응답에 활용
 public class SensorDataDto {
     private String sensorType; // LED, 재실감지, 소음감지
     private String location;   // 거실, 침실 등
