@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-
+// 수동 신고용
 @RestController
 @RequestMapping("/api/reports")
 @RequiredArgsConstructor

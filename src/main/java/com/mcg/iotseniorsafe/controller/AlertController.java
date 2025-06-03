@@ -20,15 +20,16 @@ public class AlertController {
         this.bedrockService = bedrockService;
     }
 
+    // 기존 레거시 엔드포인트 (하드코딩된 센서 데이터용)
     @PostMapping("/ai-report/analyze")
     public ResponseEntity<AlertResponse> analyzeAlert(@RequestBody AlertRequest request) {
-        logger.info("AI 분석 요청 수신: {}", request.getSensorData().size() + "개 센서");
+        logger.info("레거시 AI 분석 요청 수신: {}개 센서", request.getSensorData().size());
 
         try {
             AlertResponse response = bedrockService.analyzeAndGenerateAlert(request.getSensorData());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            logger.error("AI 분석 중 오류 발생", e);
+            logger.error("레거시 AI 분석 중 오류 발생", e);
             return ResponseEntity.internalServerError().build();
         }
     }
