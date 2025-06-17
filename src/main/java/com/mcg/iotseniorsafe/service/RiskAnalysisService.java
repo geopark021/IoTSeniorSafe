@@ -8,9 +8,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.sql.ResultSet;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class RiskAnalysisService {
@@ -32,70 +32,114 @@ public class RiskAnalysisService {
     }
 
     /**
-     * 위험 의심 내역 조회 (Secondary DB의 report 테이블 + JOIN)
+     * 위험 의심 내역 조회 - 실시간 센서 데이터 기반 (report 테이블 사용 안함)
      */
     public List<RiskEntryDto> getRiskEntries(int page, int size, String search, String sort) {
         logger.info("getRiskEntries 호출 - page: {}, size: {}, search: '{}', sort: '{}'", page, size, search, sort);
 
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT r.report_id, r.household_id, r.manager_id, m.name as manager_name, ");
-        sql.append("h.name as household_name, h.address, h.contact_number, ");
-        sql.append("r.status_code, r.created_at, r.updated_at, r.agency_name, ");
-        sql.append("rd.description ");
-        sql.append("FROM report r ");
-        sql.append("LEFT JOIN manager m ON r.manager_id = m.manager_id ");
-        sql.append("LEFT JOIN household h ON r.household_id = h.household_id ");
-        sql.append("LEFT JOIN report_detail rd ON r.report_id = rd.report_id ");
-        sql.append("WHERE 1=1 ");
+        List<RiskEntryDto> riskEntries = new ArrayList<>();
 
-        // 파라미터 리스트 생성
-        List<Object> params = new ArrayList<>();
+        try {
+            // 1. 모든 sensor_summary 테이블 조회 (Secondary + Primary)
+            String tablesQuery = "SHOW TABLES LIKE 'sensor_summary_%'";
+            List<String> secondaryTables = secondaryJdbcTemplate.queryForList(tablesQuery, String.class);
+            List<String> primaryTables = primaryJdbcTemplate.queryForList(tablesQuery, String.class);
 
-        if (search != null && !search.trim().isEmpty()) {
-            sql.append("AND (m.name LIKE ? OR h.name LIKE ? OR h.address LIKE ?) ");
-            String searchParam = "%" + search.trim() + "%";
-            params.add(searchParam);
-            params.add(searchParam);
-            params.add(searchParam);
+            Set<String> allTables = new HashSet<>();
+            allTables.addAll(secondaryTables);
+            allTables.addAll(primaryTables);
+
+            // 2. 각 가구별 위험도 계산
+            for (String tableName : allTables) {
+                String householdIdStr = tableName.replace("sensor_summary_", "");
+
+                // 숫자가 아닌 테이블명 필터링 (예: sensor_summary_queue_test)
+                if (!householdIdStr.matches("\\d+")) {
+                    logger.debug("숫자가 아닌 테이블 스킵: {}", tableName);
+                    continue;
+                }
+
+                int householdId = Integer.parseInt(householdIdStr);
+
+                try {
+                    double commonDataRatio = calculateCommonDataRatio(householdId);
+                    String riskLevel = determineRiskLevel(commonDataRatio);
+
+                    // 3. 위험(의심, 심각)인 경우만 포함
+                    if ("의심".equals(riskLevel) || "심각".equals(riskLevel)) {
+
+                        // 4. 가구 정보 조회
+                        String householdQuery = "SELECT h.household_id, h.name, h.address, h.contact_number, h.manager_id, " +
+                                "m.name as manager_name FROM household h " +
+                                "LEFT JOIN manager m ON h.manager_id = m.manager_id " +
+                                "WHERE h.household_id = ?";
+
+                        Map<String, Object> householdInfo = null;
+                        try {
+                            householdInfo = secondaryJdbcTemplate.queryForMap(householdQuery, householdId);
+                        } catch (Exception e) {
+                            logger.warn("가구 정보 조회 실패: householdId={}", householdId);
+                            continue;
+                        }
+
+                        // 5. RiskEntryDto 생성 (report 테이블 없이)
+                        RiskEntryDto dto = new RiskEntryDto();
+                        dto.setReportId(0); // 아직 신고되지 않음
+                        dto.setHouseholdId(householdId);
+                        dto.setManagerId((Integer) householdInfo.get("manager_id"));
+                        dto.setManagerName((String) householdInfo.get("manager_name"));
+                        dto.setHouseholdName((String) householdInfo.get("name"));
+                        dto.setAddress((String) householdInfo.get("address"));
+                        dto.setContactNumber((String) householdInfo.get("contact_number"));
+                        dto.setStatusCode(0); // 미처리
+                        dto.setCreatedAt(LocalDateTime.now()); // 현재 시간
+                        dto.setUpdatedAt(LocalDateTime.now());
+                        dto.setAgencyName(riskLevel.equals("심각") ? "119소방서" : "지역복지센터");
+                        dto.setDescription(String.format("시스템 감지: %s 위험도, 공통 활동 비율 %.1f%%",
+                                riskLevel, commonDataRatio));
+                        dto.setCommonDataRatio(commonDataRatio);
+                        dto.setRiskLevel(riskLevel);
+
+                        riskEntries.add(dto);
+                    }
+                } catch (Exception e) {
+                    logger.warn("가구 {} 위험도 계산 실패: {}", householdId, e.getMessage());
+                }
+            }
+
+            // 6. 정렬
+            if ("latest".equals(sort)) {
+                riskEntries.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
+            } else {
+                riskEntries.sort((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()));
+            }
+
+            // 7. 검색 필터 적용
+            if (search != null && !search.trim().isEmpty()) {
+                String searchLower = search.toLowerCase();
+                riskEntries = riskEntries.stream()
+                        .filter(dto ->
+                                (dto.getManagerName() != null && dto.getManagerName().toLowerCase().contains(searchLower)) ||
+                                        (dto.getHouseholdName() != null && dto.getHouseholdName().toLowerCase().contains(searchLower)) ||
+                                        (dto.getAddress() != null && dto.getAddress().toLowerCase().contains(searchLower))
+                        )
+                        .collect(Collectors.toList());
+            }
+
+            // 8. 페이징 적용
+            int startIndex = page * size;
+            int endIndex = Math.min(startIndex + size, riskEntries.size());
+
+            if (startIndex < riskEntries.size()) {
+                return riskEntries.subList(startIndex, endIndex);
+            } else {
+                return new ArrayList<>();
+            }
+
+        } catch (Exception e) {
+            logger.error("위험 의심 내역 조회 실패", e);
+            return new ArrayList<>();
         }
-
-        // 정렬
-        if ("latest".equals(sort)) {
-            sql.append("ORDER BY r.created_at DESC ");
-        } else {
-            sql.append("ORDER BY r.created_at ASC ");
-        }
-
-        sql.append("LIMIT ? OFFSET ?");
-        params.add(size);
-        params.add(page * size);
-
-        logger.debug("실행할 SQL: {}", sql.toString());
-        logger.debug("파라미터: {}", params);
-
-        // Secondary DB 사용 (우리가 만든 신고 관련 테이블들)
-        return secondaryJdbcTemplate.query(sql.toString(), (ResultSet rs, int rowNum) -> {
-            RiskEntryDto dto = new RiskEntryDto();
-            dto.setReportId(rs.getInt("report_id"));
-            dto.setHouseholdId(rs.getInt("household_id"));
-            dto.setManagerId(rs.getInt("manager_id"));
-            dto.setManagerName(rs.getString("manager_name"));
-            dto.setHouseholdName(rs.getString("household_name"));
-            dto.setAddress(rs.getString("address"));
-            dto.setContactNumber(rs.getString("contact_number"));
-            dto.setStatusCode(rs.getInt("status_code"));
-            dto.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
-            dto.setUpdatedAt(rs.getTimestamp("updated_at").toLocalDateTime());
-            dto.setAgencyName(rs.getString("agency_name"));
-            dto.setDescription(rs.getString("description"));
-
-            // 실시간으로 공통 데이터 비율 계산
-            double commonDataRatio = calculateCommonDataRatio(rs.getInt("household_id"));
-            dto.setCommonDataRatio(commonDataRatio);
-            dto.setRiskLevel(determineRiskLevel(commonDataRatio));
-
-            return dto;
-        }, params.toArray());
     }
 
     /**
@@ -138,26 +182,74 @@ public class RiskAnalysisService {
      */
     private double calculateFromSecondary(int householdId, String tableName) {
         try {
-            // 어제와 오늘 데이터 개수 조회
-            String yesterdayCountQuery = String.format(
-                    "SELECT COUNT(*) FROM %s WHERE DATE(recorded_at) = DATE(NOW() - INTERVAL 1 DAY)", tableName);
-            String todayCountQuery = String.format(
-                    "SELECT COUNT(*) FROM %s WHERE DATE(recorded_at) = DATE(NOW())", tableName);
+            // 어제와 오늘의 시간대별 활동 데이터 조회
+            String yesterdayQuery = String.format(
+                    "SELECT HOUR(recorded_at) as hour, " +
+                            "MAX(led_master_room + led_living_room + led_kitchen + led_toilet) as led_active, " +
+                            "MAX(is_occupied) as occupied, " +
+                            "MAX(is_noisy) as noisy " +
+                            "FROM %s WHERE DATE(recorded_at) = DATE(NOW() - INTERVAL 1 DAY) " +
+                            "GROUP BY HOUR(recorded_at) ORDER BY hour", tableName);
 
-            Integer yesterdayCount = secondaryJdbcTemplate.queryForObject(yesterdayCountQuery, Integer.class);
-            Integer todayCount = secondaryJdbcTemplate.queryForObject(todayCountQuery, Integer.class);
+            String todayQuery = String.format(
+                    "SELECT HOUR(recorded_at) as hour, " +
+                            "MAX(led_master_room + led_living_room + led_kitchen + led_toilet) as led_active, " +
+                            "MAX(is_occupied) as occupied, " +
+                            "MAX(is_noisy) as noisy " +
+                            "FROM %s WHERE DATE(recorded_at) = DATE(NOW()) " +
+                            "GROUP BY HOUR(recorded_at) ORDER BY hour", tableName);
 
-            if (yesterdayCount == null || todayCount == null || yesterdayCount == 0 || todayCount == 0) {
-                logger.debug("프로토타입 데이터 부족 - householdId: {}, 어제: {}, 오늘: {}", householdId, yesterdayCount, todayCount);
+            List<Map<String, Object>> yesterdayData = secondaryJdbcTemplate.queryForList(yesterdayQuery);
+            List<Map<String, Object>> todayData = secondaryJdbcTemplate.queryForList(todayQuery);
+
+            if (yesterdayData.isEmpty() || todayData.isEmpty()) {
+                logger.debug("프로토타입 데이터 부족 - householdId: {}, 어제: {}시간, 오늘: {}시간",
+                        householdId, yesterdayData.size(), todayData.size());
                 return 0.0;
             }
 
-            // 간단한 비율 계산 (실제로는 더 복잡한 로직 필요)
-            int minCount = Math.min(yesterdayCount, todayCount);
-            int maxCount = Math.max(yesterdayCount, todayCount);
+            // 시간대별 활동 패턴 비교
+            int commonActivityHours = 0;
+            int totalComparableHours = 0;
 
-            double ratio = maxCount > 0 ? (double) minCount / maxCount * 100 : 0.0;
-            logger.debug("프로토타입 센서 데이터 비율 계산 완료 - householdId: {}, 비율: {}%", householdId, ratio);
+            // 어제 데이터를 Map으로 변환 (빠른 검색을 위해)
+            Map<Integer, Map<String, Object>> yesterdayMap = new HashMap<>();
+            for (Map<String, Object> row : yesterdayData) {
+                yesterdayMap.put((Integer) row.get("hour"), row);
+            }
+
+            // 오늘 데이터와 비교
+            for (Map<String, Object> todayRow : todayData) {
+                Integer hour = (Integer) todayRow.get("hour");
+                Map<String, Object> yesterdayRow = yesterdayMap.get(hour);
+
+                if (yesterdayRow != null) {
+                    totalComparableHours++;
+
+                    // 같은 시간대의 활동 패턴 비교
+                    boolean yesterdayLed = ((Number) yesterdayRow.get("led_active")).intValue() > 0;
+                    boolean todayLed = ((Number) todayRow.get("led_active")).intValue() > 0;
+
+                    boolean yesterdayOccupied = ((Number) yesterdayRow.get("occupied")).intValue() > 0;
+                    boolean todayOccupied = ((Number) todayRow.get("occupied")).intValue() > 0;
+
+                    boolean yesterdayNoisy = ((Number) yesterdayRow.get("noisy")).intValue() > 0;
+                    boolean todayNoisy = ((Number) todayRow.get("noisy")).intValue() > 0;
+
+                    // 하나라도 공통 활동이 있으면 카운트
+                    if ((yesterdayLed && todayLed) ||
+                            (yesterdayOccupied && todayOccupied) ||
+                            (yesterdayNoisy && todayNoisy)) {
+                        commonActivityHours++;
+                    }
+                }
+            }
+
+            double ratio = totalComparableHours > 0 ?
+                    (double) commonActivityHours / totalComparableHours * 100 : 0.0;
+
+            logger.debug("프로토타입 센서 활동 패턴 비교 - householdId: {}, 공통활동: {}/{}시간 = {}%",
+                    householdId, commonActivityHours, totalComparableHours, ratio);
             return ratio;
 
         } catch (Exception e) {
@@ -171,26 +263,62 @@ public class RiskAnalysisService {
      */
     private double calculateFromPrimary(int householdId, String tableName) {
         try {
-            // 어제와 오늘 데이터 개수 조회
-            String yesterdayCountQuery = String.format(
-                    "SELECT COUNT(*) FROM %s WHERE DATE(recorded_at) = DATE(NOW() - INTERVAL 1 DAY)", tableName);
-            String todayCountQuery = String.format(
-                    "SELECT COUNT(*) FROM %s WHERE DATE(recorded_at) = DATE(NOW())", tableName);
+            // 어제와 오늘의 시간대별 LED 활동 데이터 조회
+            String yesterdayQuery = String.format(
+                    "SELECT HOUR(recorded_at) as hour, " +
+                            "MAX(led_master_room + led_living_room + led_kitchen + led_toilet) as led_active " +
+                            "FROM %s WHERE DATE(recorded_at) = DATE(NOW() - INTERVAL 1 DAY) " +
+                            "GROUP BY HOUR(recorded_at) ORDER BY hour", tableName);
 
-            Integer yesterdayCount = primaryJdbcTemplate.queryForObject(yesterdayCountQuery, Integer.class);
-            Integer todayCount = primaryJdbcTemplate.queryForObject(todayCountQuery, Integer.class);
+            String todayQuery = String.format(
+                    "SELECT HOUR(recorded_at) as hour, " +
+                            "MAX(led_master_room + led_living_room + led_kitchen + led_toilet) as led_active " +
+                            "FROM %s WHERE DATE(recorded_at) = DATE(NOW()) " +
+                            "GROUP BY HOUR(recorded_at) ORDER BY hour", tableName);
 
-            if (yesterdayCount == null || todayCount == null || yesterdayCount == 0 || todayCount == 0) {
-                logger.debug("기존 LED 데이터 부족 - householdId: {}, 어제: {}, 오늘: {}", householdId, yesterdayCount, todayCount);
+            List<Map<String, Object>> yesterdayData = primaryJdbcTemplate.queryForList(yesterdayQuery);
+            List<Map<String, Object>> todayData = primaryJdbcTemplate.queryForList(todayQuery);
+
+            if (yesterdayData.isEmpty() || todayData.isEmpty()) {
+                logger.debug("기존 LED 데이터 부족 - householdId: {}, 어제: {}시간, 오늘: {}시간",
+                        householdId, yesterdayData.size(), todayData.size());
                 return 0.0;
             }
 
-            // 간단한 비율 계산 (실제로는 더 복잡한 로직 필요)
-            int minCount = Math.min(yesterdayCount, todayCount);
-            int maxCount = Math.max(yesterdayCount, todayCount);
+            // 시간대별 LED 활동 패턴 비교
+            int commonLedHours = 0;
+            int totalComparableHours = 0;
 
-            double ratio = maxCount > 0 ? (double) minCount / maxCount * 100 : 0.0;
-            logger.debug("기존 LED 데이터 비율 계산 완료 - householdId: {}, 비율: {}%", householdId, ratio);
+            // 어제 데이터를 Map으로 변환
+            Map<Integer, Map<String, Object>> yesterdayMap = new HashMap<>();
+            for (Map<String, Object> row : yesterdayData) {
+                yesterdayMap.put((Integer) row.get("hour"), row);
+            }
+
+            // 오늘 데이터와 비교
+            for (Map<String, Object> todayRow : todayData) {
+                Integer hour = (Integer) todayRow.get("hour");
+                Map<String, Object> yesterdayRow = yesterdayMap.get(hour);
+
+                if (yesterdayRow != null) {
+                    totalComparableHours++;
+
+                    // 같은 시간대의 LED 활동 비교
+                    boolean yesterdayLed = ((Number) yesterdayRow.get("led_active")).intValue() > 0;
+                    boolean todayLed = ((Number) todayRow.get("led_active")).intValue() > 0;
+
+                    // 둘 다 LED 활동이 있으면 공통 활동
+                    if (yesterdayLed && todayLed) {
+                        commonLedHours++;
+                    }
+                }
+            }
+
+            double ratio = totalComparableHours > 0 ?
+                    (double) commonLedHours / totalComparableHours * 100 : 0.0;
+
+            logger.debug("기존 LED 활동 패턴 비교 - householdId: {}, 공통LED: {}/{}시간 = {}%",
+                    householdId, commonLedHours, totalComparableHours, ratio);
             return ratio;
 
         } catch (Exception e) {
@@ -285,7 +413,7 @@ public class RiskAnalysisService {
     }
 
     /**
-     * 모든 가구의 위험도 평가 (Secondary와 Primary 모두 확인)
+     * 모든 가구의 위험도 평가 (자동 신고 생성 제거)
      */
     public Map<String, Object> evaluateAllHouseholds() {
         Map<String, Object> result = new HashMap<>();
@@ -308,6 +436,13 @@ public class RiskAnalysisService {
 
             for (String tableName : allTables) {
                 String householdIdStr = tableName.replace("sensor_summary_", "");
+
+                // 숫자가 아닌 테이블명 필터링 (예: sensor_summary_queue_test)
+                if (!householdIdStr.matches("\\d+")) {
+                    logger.debug("숫자가 아닌 테이블 스킵: {}", tableName);
+                    continue;
+                }
+
                 int householdId = Integer.parseInt(householdIdStr);
 
                 try {
@@ -317,8 +452,9 @@ public class RiskAnalysisService {
                     if ("의심".equals(riskLevel) || "심각".equals(riskLevel)) {
                         riskHouseholds++;
 
-                        // 위험한 가구는 자동으로 report 테이블에 등록 (Secondary DB)
-                        createAutomaticReport(householdId, riskLevel, commonDataRatio);
+                        // 자동 신고 생성 제거 - 로그만 남기기
+                        logger.info("위험 감지: householdId={}, riskLevel={}, ratio={}%",
+                                householdId, riskLevel, commonDataRatio);
                     }
 
                 } catch (Exception e) {
@@ -340,48 +476,5 @@ public class RiskAnalysisService {
         }
 
         return result;
-    }
-
-    /**
-     * 위험 가구에 대한 자동 신고 생성 (Secondary DB에 저장)
-     */
-    private void createAutomaticReport(int householdId, String riskLevel, double commonDataRatio) {
-        try {
-            // 오늘 이미 신고된 가구인지 확인 (Secondary DB)
-            String checkQuery = "SELECT COUNT(*) FROM report WHERE household_id = ? AND DATE(created_at) = DATE(NOW())";
-            Integer existingReports = secondaryJdbcTemplate.queryForObject(checkQuery, Integer.class, householdId);
-
-            if (existingReports != null && existingReports > 0) {
-                logger.debug("이미 신고된 가구: householdId={}", householdId);
-                return; // 이미 신고됨
-            }
-
-            // 시스템 자동 담당자 조회 (manager_id = 1이라고 가정)
-            int systemManagerId = 1;
-
-            // 신고 기관 결정
-            String agencyName = "심각".equals(riskLevel) ? "119소방서" : "지역복지센터";
-
-            // report 테이블에 삽입 (Secondary DB)
-            String insertReportQuery = "INSERT INTO report (manager_id, household_id, status_code, created_at, updated_at, agency_name) " +
-                    "VALUES (?, ?, ?, NOW(), NOW(), ?)";
-
-            secondaryJdbcTemplate.update(insertReportQuery, systemManagerId, householdId, 0, agencyName);
-
-            // 생성된 report_id 조회
-            String getReportIdQuery = "SELECT LAST_INSERT_ID()";
-            Integer reportId = secondaryJdbcTemplate.queryForObject(getReportIdQuery, Integer.class);
-
-            // report_detail 테이블에 상세 내용 삽입 (Secondary DB)
-            String description = String.format("시스템 자동 감지: %s 위험도, 공통 활동 비율 %.1f%%", riskLevel, commonDataRatio);
-            String insertDetailQuery = "INSERT INTO report_detail (report_id, description) VALUES (?, ?)";
-
-            secondaryJdbcTemplate.update(insertDetailQuery, reportId, description);
-
-            logger.info("자동 신고 생성 완료: householdId={}, riskLevel={}, reportId={}", householdId, riskLevel, reportId);
-
-        } catch (Exception e) {
-            logger.error("자동 신고 생성 실패: householdId={}", householdId, e);
-        }
     }
 }

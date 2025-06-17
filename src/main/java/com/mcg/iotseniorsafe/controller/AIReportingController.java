@@ -2,7 +2,9 @@ package com.mcg.iotseniorsafe.controller;
 
 import com.mcg.iotseniorsafe.dto.AlertResponse;
 import com.mcg.iotseniorsafe.dto.RiskEntryDto;
+import com.mcg.iotseniorsafe.entity.Report;
 import com.mcg.iotseniorsafe.service.BedrockService;
+import com.mcg.iotseniorsafe.service.ReportService;
 import com.mcg.iotseniorsafe.service.RiskAnalysisService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,11 +24,13 @@ public class AIReportingController {
 
     private final BedrockService bedrockService;
     private final RiskAnalysisService riskAnalysisService;
+    private final ReportService reportService;
 
     @Autowired
-    public AIReportingController(BedrockService bedrockService, RiskAnalysisService riskAnalysisService) {
+    public AIReportingController(BedrockService bedrockService, RiskAnalysisService riskAnalysisService, ReportService reportService) {
         this.bedrockService = bedrockService;
         this.riskAnalysisService = riskAnalysisService;
+        this.reportService = reportService;
     }
 
     /**
@@ -123,6 +127,33 @@ public class AIReportingController {
 
         } catch (Exception e) {
             logger.error("전체 가구 위험도 평가 실패", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 최종 신고 제출 (DB 저장)
+     */
+    @PostMapping("/submit-final-report")
+    public ResponseEntity<Map<String, Object>> submitFinalReport(@RequestBody Map<String, Object> requestData) {
+        try {
+            int householdId = (Integer) requestData.get("householdId");
+            int managerId = (Integer) requestData.get("managerId");
+            String agencyName = (String) requestData.get("agencyName");
+            String reportContent = (String) requestData.get("reportContent");
+
+            logger.info("최종 신고 제출: householdId={}, managerId={}, agency={}", householdId, managerId, agencyName);
+
+            // ReportService의 AI 리포팅용 메서드 호출 (아래에서 추가)
+            Report savedReport = reportService.createAIReport(managerId, householdId, agencyName, reportContent);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "reportId", savedReport.getReportId(),
+                    "message", "신고가 성공적으로 접수되었습니다."
+            ));
+        } catch (Exception e) {
+            logger.error("최종 신고 저장 실패", e);
             return ResponseEntity.internalServerError().build();
         }
     }
