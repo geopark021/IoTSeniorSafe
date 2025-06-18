@@ -1,8 +1,11 @@
 ![image](https://github.com/user-attachments/assets/4f6555a7-a3a5-47c5-9fe5-eb91446e99fa)
-![image](https://github.com/user-attachments/assets/4f6555a7-a3a5-47c5-9fe5-eb91446e99fa)
 
+
+### 서비스 개요
 독거 어르신의 안전을 위해 LED, 재실(PIR), 소음 센서에서 수집한 데이터를
 AWS 기반 파이프라인으로 데이터 처리-분석-리포트 과정을 제공합니다.
+
+### 주요 기능
 
 1. IoT 센서 기반 어르신 활동 모니터링
  LED ON/OFF 데이터, 재실 센서, 소음 센서를 활용하여 독거노인의 활동 및 생존 여부를 감지합니다.
